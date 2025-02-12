@@ -1,2 +1,2 @@
 # gator
-Only for BootDev course Pokedex
+Only for BootDev course Gator
