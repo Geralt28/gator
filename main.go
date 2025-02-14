@@ -78,14 +78,30 @@ func handlerReset(s *state, cmd command) error {
 	if len(cmd.arguments) != 0 {
 		return fmt.Errorf("no arguments for reset command")
 	}
-
 	err := s.db.DeleteUsers(context.Background())
 	if err != nil {
 		fmt.Println("error: failed to delete users")
 		os.Exit(1)
 	}
-
 	fmt.Println("User list had beed reset!")
+	return nil
+}
+
+func handlerUsers(s *state, cmd command) error {
+	if len(cmd.arguments) != 0 {
+		return fmt.Errorf("no arguments for users command")
+	}
+	users, err := s.db.GetUsers(context.Background())
+	if err != nil {
+		fmt.Println("error: failed to list users")
+		os.Exit(1)
+	}
+	for _, user := range users {
+		if user == s.config.Current_user_name {
+			user = user + " (current)"
+		}
+		fmt.Printf("* %s\n", user)
+	}
 	return nil
 }
 
@@ -129,6 +145,7 @@ func main() {
 	c_commands.register("login", handlerLogin)
 	c_commands.register("register", handlerRegister)
 	c_commands.register("reset", handlerReset)
+	c_commands.register("users", handlerUsers)
 
 	args := os.Args
 
