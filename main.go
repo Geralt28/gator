@@ -1,13 +1,20 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/Geralt28/gator/internal/config"
+	"github.com/Geralt28/gator/internal/database"
+	"github.com/google/uuid"
+	_ "github.com/lib/pq"
 )
 
 type state struct {
+	db     *database.Queries
 	config *config.Config
 }
 
@@ -24,14 +31,46 @@ func handlerLogin(s *state, cmd command) error {
 	if len(cmd.arguments) == 0 {
 		return fmt.Errorf("no arguments")
 	}
-	if cmd.name == "login" && len(cmd.arguments) != 1 {
+	if len(cmd.arguments) != 1 {
 		return fmt.Errorf("error: login expects exactly one argument (username)")
+	}
+	user, err := s.db.GetUser(context.Background(), cmd.arguments[0])
+	if err != nil {
+		fmt.Println("error: user does not exist")
+		os.Exit(1)
+	}
+
+	err = s.config.SetUser(user.Name)
+	if err != nil {
+		return fmt.Errorf("failed to set user: %v", err)
+	}
+	fmt.Println("User:", user.Name, "has been logged in!")
+	return nil
+}
+
+func handlerRegister(s *state, cmd command) error {
+	if len(cmd.arguments) == 0 {
+		return fmt.Errorf("no arguments")
+	}
+	if len(cmd.arguments) != 1 {
+		return fmt.Errorf("error: register expects exactly one argument (username)")
 	} else {
-		err := s.config.SetUser(cmd.arguments[0])
-		if err != nil {
-			return fmt.Errorf("failed to set user: %v", err)
+		id := uuid.New()
+		user := cmd.arguments[0]
+		arg := database.CreateUserParams{
+			ID:        id,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			Name:      user,
 		}
-		fmt.Println("User:", cmd.arguments[0], "has been set!")
+		user_db, err := s.db.CreateUser(context.Background(), arg)
+		if err != nil {
+			fmt.Println("error:", err)
+			os.Exit(1)
+		}
+		s.config.SetUser(user)
+		fmt.Println("User:", user, "has been registered!")
+		fmt.Println(user_db)
 	}
 	return nil
 }
@@ -74,6 +113,7 @@ func main() {
 
 	// zarejestruj polecenia:
 	c_commands.register("login", handlerLogin)
+	c_commands.register("register", handlerRegister)
 
 	args := os.Args
 
@@ -83,6 +123,13 @@ func main() {
 	}
 
 	c_command := command{name: args[1], arguments: args[2:]}
+
+	db, err := sql.Open("postgres", s.config.Db_url)
+	if err != nil {
+		fmt.Println("error: can not open database")
+	}
+	dbQueries := database.New(db)
+	s.db = dbQueries
 
 	// Uruchom polecenie
 	if err := c_commands.run(s, c_command); err != nil {
