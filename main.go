@@ -39,7 +39,6 @@ func handlerLogin(s *state, cmd command) error {
 		fmt.Println("error: user does not exist")
 		os.Exit(1)
 	}
-
 	err = s.config.SetUser(user.Name)
 	if err != nil {
 		return fmt.Errorf("failed to set user: %v", err)
@@ -72,6 +71,21 @@ func handlerRegister(s *state, cmd command) error {
 		fmt.Println("User:", user, "has been registered!")
 		fmt.Println(user_db)
 	}
+	return nil
+}
+
+func handlerReset(s *state, cmd command) error {
+	if len(cmd.arguments) != 0 {
+		return fmt.Errorf("no arguments for reset command")
+	}
+
+	err := s.db.DeleteUsers(context.Background())
+	if err != nil {
+		fmt.Println("error: failed to delete users")
+		os.Exit(1)
+	}
+
+	fmt.Println("User list had beed reset!")
 	return nil
 }
 
@@ -114,6 +128,7 @@ func main() {
 	// zarejestruj polecenia:
 	c_commands.register("login", handlerLogin)
 	c_commands.register("register", handlerRegister)
+	c_commands.register("reset", handlerReset)
 
 	args := os.Args
 
