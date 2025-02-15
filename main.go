@@ -172,8 +172,17 @@ func handlerAddFeed(s *state, cmd command) error {
 		UpdatedAt: time.Now(),
 		Name:      cmd.arguments[0],
 		Url:       sql.NullString{String: cmd.arguments[1], Valid: true},
-		UserID:    uuid.NullUUID{UUID: user.ID, Valid: true},
+		UserID:    user.ID,
 	})
+
+	followCmd := command{
+		name:      "follow",
+		arguments: []string{cmd.arguments[1]}, // Pass only URL
+	}
+	err = handlerFollow(s, followCmd)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -187,6 +196,43 @@ func handlerFeeds(s *state, cmd command) error {
 	}
 	for _, feed := range feeds {
 		fmt.Println("Name:", feed.Name, " | ", "URL:", feed.Url.String, " | ", "User:", feed.User.String)
+	}
+	return nil
+}
+
+func handlerFollow(s *state, cmd command) error {
+	if len(cmd.arguments) != 1 {
+		return fmt.Errorf("error: follow should have only one argument: url")
+	}
+	user_name := s.config.Current_user_name
+	url := cmd.arguments[0]
+	followParams := database.CreateFeedFollowParams{
+		Name: user_name,
+		Url:  sql.NullString{String: url, Valid: true},
+	}
+	createFeedData, err := s.db.CreateFeedFollow(context.Background(), followParams)
+	if err != nil {
+		return err
+	}
+	fmt.Println("Feed", url, "followed!")
+	fmt.Println("Feed_Name:", createFeedData.FeedName, " | ", "User_Name:", createFeedData.UserName)
+	return nil
+}
+
+func handlerFollowing(s *state, cmd command) error {
+	//if len(cmd.arguments) != 0 {
+	//	return fmt.Errorf("error: following should not have any arguments")
+	//}
+	user, err := s.db.GetUser(context.Background(), s.config.Current_user_name)
+	if err != nil {
+		return err
+	}
+	follows, err := s.db.GetFeedFollowsForUser(context.Background(), user.ID)
+	if err != nil {
+		return err
+	}
+	for _, follow := range follows {
+		fmt.Println(follow.Feedname)
 	}
 	return nil
 }
@@ -254,6 +300,8 @@ func main() {
 	c_commands.register("agg", handlerAgg)
 	c_commands.register("addfeed", handlerAddFeed)
 	c_commands.register("feeds", handlerFeeds)
+	c_commands.register("follow", handlerFollow)
+	c_commands.register("following", handlerFollowing)
 
 	args := os.Args
 
