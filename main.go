@@ -3,7 +3,11 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/xml"
 	"fmt"
+	"html"
+	"io"
+	"net/http"
 	"os"
 	"time"
 
@@ -26,6 +30,29 @@ type command struct {
 type commands struct {
 	komendy map[string]func(*state, command) error
 }
+
+// ******** START:  Struct for RSS feed *********
+
+type RSS struct {
+	XMLName xml.Name `xml:"rss"`
+	Channel Channel  `xml:"channel"`
+}
+
+type Channel struct {
+	Title       string `xml:"title"`
+	Link        string `xml:"link"`
+	Description string `xml:"description"`
+	Items       []Item `xml:"item"`
+}
+
+type Item struct {
+	Title       string `xml:"title"`
+	Link        string `xml:"link"`
+	Description string `xml:"description"`
+	PubDate     string `xml:"pubDate"`
+}
+
+// ******** END:  Struct for RSS feed *********
 
 func handlerLogin(s *state, cmd command) error {
 	if len(cmd.arguments) == 0 {
@@ -105,6 +132,23 @@ func handlerUsers(s *state, cmd command) error {
 	return nil
 }
 
+func handlerAgg(s *state, cmd command) error {
+	url := "https://www.wagslane.dev/index.xml"
+	feed, err := fetchFeed(context.Background(), url)
+	if err != nil {
+		return err
+	}
+	// Iterate through the feed items
+	for _, item := range feed.Channel.Items {
+		fmt.Printf("Title: %s\n", item.Title)
+		fmt.Printf("Link: %s\n", item.Link)
+		fmt.Printf("Published: %s\n", item.PubDate)
+		fmt.Printf("Description: %s\n\n", item.Description)
+	}
+	//fmt.Println(feed)
+	return nil
+}
+
 func (c *commands) register(name string, f func(*state, command) error) {
 	//rejestruje fukcje pod nazwa "name" jako klucz i funcje f, ktora bedzie obslugiwala komende
 	c.komendy[name] = f
@@ -120,10 +164,29 @@ func (c *commands) run(s *state, cmd command) error {
 	return handler(s, cmd)
 }
 
-//func (c *commands) login(s *state, cmd command) error {
-//	cmd, err := c.komendy[cmd.name]
-//	return nil
-//}
+func fetchFeed(ctx context.Context, feedURL string) (*RSS, error) {
+	var rss RSS
+	req, err := http.NewRequestWithContext(ctx, "GET", feedURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Gator")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err = xml.Unmarshal(data, &rss); err != nil {
+		return nil, err
+	}
+	rss.Channel.Title = html.UnescapeString(rss.Channel.Title)
+	rss.Channel.Description = html.UnescapeString(rss.Channel.Description)
+	return &rss, nil
+}
 
 func main() {
 	// odczytaj config
@@ -146,6 +209,7 @@ func main() {
 	c_commands.register("register", handlerRegister)
 	c_commands.register("reset", handlerReset)
 	c_commands.register("users", handlerUsers)
+	c_commands.register("agg", handlerAgg)
 
 	args := os.Args
 
