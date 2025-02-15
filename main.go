@@ -177,6 +177,20 @@ func handlerAddFeed(s *state, cmd command) error {
 	return nil
 }
 
+func handlerFeeds(s *state, cmd command) error {
+	//if len(cmd.arguments) != 0 {
+	//return fmt.Errorf("error: feeds should not have any arguments")
+	//}
+	feeds, err := s.db.GetFeeds(context.Background())
+	if err != nil {
+		return err
+	}
+	for _, feed := range feeds {
+		fmt.Println("Name:", feed.Name, " | ", "URL:", feed.Url.String, " | ", "User:", feed.User.String)
+	}
+	return nil
+}
+
 func (c *commands) register(name string, f func(*state, command) error) {
 	//rejestruje fukcje pod nazwa "name" jako klucz i funcje f, ktora bedzie obslugiwala komende
 	c.komendy[name] = f
@@ -239,6 +253,7 @@ func main() {
 	c_commands.register("users", handlerUsers)
 	c_commands.register("agg", handlerAgg)
 	c_commands.register("addfeed", handlerAddFeed)
+	c_commands.register("feeds", handlerFeeds)
 
 	args := os.Args
 

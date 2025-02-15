@@ -100,6 +100,39 @@ func (q *Queries) DeleteUsers(ctx context.Context) error {
 	return err
 }
 
+const getFeeds = `-- name: GetFeeds :many
+SELECT feeds.name as Name, feeds.url as Url, users.name as User FROM feeds LEFT JOIN users ON feeds.user_id = users.id
+`
+
+type GetFeedsRow struct {
+	Name string
+	Url  sql.NullString
+	User sql.NullString
+}
+
+func (q *Queries) GetFeeds(ctx context.Context) ([]GetFeedsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getFeeds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetFeedsRow
+	for rows.Next() {
+		var i GetFeedsRow
+		if err := rows.Scan(&i.Name, &i.Url, &i.User); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUser = `-- name: GetUser :one
 SELECT id, created_at, updated_at, name FROM users
 WHERE name = $1
