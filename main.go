@@ -138,7 +138,11 @@ func handlerAgg(s *state, cmd command) error {
 	if err != nil {
 		return err
 	}
-	// Iterate through the feed items
+	// Wyswietle podstawowe informacje o feed
+	fmt.Printf("Feed Title: %s\n", feed.Channel.Title)
+	fmt.Printf("Feed Description: %s\n", feed.Channel.Description)
+	fmt.Printf("Feed Link: %s\n\n", feed.Channel.Link)
+	// Drukuj poszczegolne elementy feedu
 	for _, item := range feed.Channel.Items {
 		fmt.Printf("Title: %s\n", item.Title)
 		fmt.Printf("Link: %s\n", item.Link)
@@ -146,6 +150,30 @@ func handlerAgg(s *state, cmd command) error {
 		fmt.Printf("Description: %s\n\n", item.Description)
 	}
 	//fmt.Println(feed)
+	return nil
+}
+
+func handlerAddFeed(s *state, cmd command) error {
+	if len(cmd.arguments) != 2 {
+		return fmt.Errorf("error: addfeed expects exactly two arguments (name_of_feed, feed_url)")
+	}
+	//rss, err := fetchFeed(ctx, cmd.arguments[0])
+	//if err != nil {
+	//	return err}
+	user_name := s.config.Current_user_name
+	user, err := s.db.GetUser(context.Background(), user_name)
+	if err != nil {
+		fmt.Println("User not found in database")
+		return err
+	}
+	s.db.CreateFeed(context.Background(), database.CreateFeedParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Name:      cmd.arguments[0],
+		Url:       sql.NullString{String: cmd.arguments[1], Valid: true},
+		UserID:    uuid.NullUUID{UUID: user.ID, Valid: true},
+	})
 	return nil
 }
 
@@ -210,6 +238,7 @@ func main() {
 	c_commands.register("reset", handlerReset)
 	c_commands.register("users", handlerUsers)
 	c_commands.register("agg", handlerAgg)
+	c_commands.register("addfeed", handlerAddFeed)
 
 	args := os.Args
 
