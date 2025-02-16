@@ -76,3 +76,25 @@ SELECT * FROM feeds
 ORDER BY last_fetched_at DESC NULLS FIRST
 --LIMIT 1
 ;
+
+-- name: CreatePost :exec
+INSERT INTO posts (id, created_at, updated_at, title, url, description, content, published_at, feed_id)
+VALUES (
+    gen_random_uuid(),
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6 
+);
+
+-- name: GetPostsForUser :many
+SELECT * FROM posts
+INNER JOIN feed_follows ON posts.feed_id = feed_follows.feed_id
+WHERE feed_follows.user_id = $1
+ORDER BY posts.updated_at 
+LIMIT $2;
+

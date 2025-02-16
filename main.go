@@ -4,18 +4,30 @@ import (
 	"context"
 	"database/sql"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"html"
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/Geralt28/gator/internal/config"
 	"github.com/Geralt28/gator/internal/database"
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 )
+
+// List of common RSS datetime formats
+var rssDateFormats = []string{
+	time.RFC1123,                // "Mon, 02 Jan 2006 15:04:05 MST"
+	time.RFC1123Z,               // "Mon, 02 Jan 2006 15:04:05 -0700"
+	time.RFC3339,                // "2006-01-02T15:04:05Z"
+	"02 Jan 2006 15:04:05 MST",  // "02 Jan 2006 15:04:05 UTC"
+	"2006-01-02 15:04:05 -0700", // "2006-01-02 15:04:05 -0700"
+	"2006-01-02T15:04:05-0700",  // "2006-01-02T15:04:05-0700"
+}
 
 type state struct {
 	db     *database.Queries
@@ -256,6 +268,38 @@ func handlerUnfollow(s *state, cmd command, user database.User) error {
 	return nil
 }
 
+func handlerBrowse(s *state, cmd command, user database.User) error {
+	dl := len(cmd.arguments)
+
+	if dl > 1 {
+		fmt.Println("error: only one optional parameter for browse command")
+		return fmt.Errorf("too many parameters for browse command")
+	}
+	ilosc := 2
+	if dl == 1 {
+		i, err := strconv.Atoi(cmd.arguments[0])
+		ilosc = i
+		if err != nil {
+			return fmt.Errorf("invalid number format: %v", err)
+		}
+	}
+	PostsForUserParams := database.GetPostsForUserParams{
+		UserID: user.ID,
+		Limit:  int32(ilosc),
+	}
+	posts, err := s.db.GetPostsForUser(context.Background(), PostsForUserParams)
+	if err != nil {
+		fmt.Println("error: can not find any posts for user")
+		return err
+	}
+	err = feedDetailPostsPrint(posts)
+	if err != nil {
+		fmt.Println("error: can show any posts for user")
+		return err
+	}
+	return nil
+}
+
 func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(s *state, cmd command) error {
 	return func(s *state, cmd command) error {
 		// Get the currently logged-in user
@@ -335,19 +379,54 @@ func scrapeFeeds(s *state) error {
 			fmt.Println("error: could not mark as fetched:", url)
 			return err
 		}
-		err = feedBasicPrint(*rss)
-		if err != nil {
-			fmt.Println("error: could not print feed:", url)
-			continue
+		var czas_Valid bool
+		for _, item := range rss.Channel.Items {
+			DataStr := item.PubDate
+			czas, err := parseRSSTime(DataStr)
+			if err != nil {
+				czas_Valid = false
+				fmt.Println("error: could not parse string into date:", DataStr)
+			} else {
+				czas_Valid = true
+			}
+			PostParams := database.CreatePostParams{
+				Title:       item.Title,
+				Url:         item.Link,
+				Description: item.Description,
+				PublishedAt: sql.NullTime{Time: czas, Valid: czas_Valid},
+				FeedID:      feed.ID,
+			}
+			err = s.db.CreatePost(context.Background(), PostParams)
+			if err != nil {
+				var pqErr *pq.Error
+				if errors.As(err, &pqErr) && pqErr.Code != "23505" { // 23505 = unique_violation
+					fmt.Println("error: could not create new post:", err)
+				}
+			}
 		}
-		if err != nil {
-			return err
-		}
+
+		//err = feedBasicPrint(*rss)
+		//if err != nil {
+		//	fmt.Println("error: could not print feed:", url)
+		//	continue
 	}
 	return nil
 }
 
-func feedDetailPrint(rss RSS) error {
+func parseRSSTime(dateStr string) (time.Time, error) {
+	var parsedTime time.Time
+	var err error
+	// Try each format until one works
+	for _, format := range rssDateFormats {
+		parsedTime, err = time.Parse(format, dateStr)
+		if err == nil {
+			return parsedTime, nil // Success!
+		}
+	}
+	return time.Time{}, fmt.Errorf("could not parse date: %s", dateStr)
+}
+
+func feedDetailRSSPrint(rss RSS) error {
 	// Wyswietle podstawowe informacje o feed
 	err := feedBasicPrint(rss)
 	if err != nil {
@@ -381,6 +460,17 @@ func feedBasicPrint(rss RSS) error {
 	return nil
 }
 
+func feedDetailPostsPrint(posts []database.GetPostsForUserRow) error {
+	// Drukuj poszczegolne elementy feedu
+	for _, item := range posts {
+		fmt.Printf("Title: %s\n", item.Title)
+		fmt.Printf("Url: %s\n", item.Url)
+		fmt.Printf("Published: %s\n", item.PublishedAt.Time)
+		fmt.Printf("Description: %s\n\n", item.Description)
+	}
+	return nil
+}
+
 func main() {
 	// odczytaj config
 	cfg, err := config.Read()
@@ -408,6 +498,7 @@ func main() {
 	c_commands.register("follow", middlewareLoggedIn(handlerFollow))
 	c_commands.register("following", middlewareLoggedIn(handlerFollowing))
 	c_commands.register("unfollow", middlewareLoggedIn(handlerUnfollow))
+	c_commands.register("browse", middlewareLoggedIn(handlerBrowse))
 
 	args := os.Args
 
