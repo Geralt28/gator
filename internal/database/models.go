@@ -12,12 +12,13 @@ import (
 )
 
 type Feed struct {
-	ID        uuid.UUID
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	Name      string
-	Url       sql.NullString
-	UserID    uuid.UUID
+	ID            uuid.UUID
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	Name          string
+	Url           sql.NullString
+	UserID        uuid.UUID
+	LastFetchedAt sql.NullTime
 }
 
 type FeedFollow struct {

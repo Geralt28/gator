@@ -132,25 +132,38 @@ func handlerUsers(s *state, cmd command) error {
 	return nil
 }
 
-func handlerAgg(s *state, cmd command) error {
-	url := "https://www.wagslane.dev/index.xml"
-	feed, err := fetchFeed(context.Background(), url)
+func handlerAgg(s *state, cmd command, time_between_reqs string) error {
+
+	fmt.Println("Collecting feeds every", time_between_reqs)
+	timeBetweenRequests, err := time.ParseDuration(time_between_reqs)
 	if err != nil {
-		return err
+		fmt.Println("error: can not convert string into time duration")
 	}
-	// Wyswietle podstawowe informacje o feed
-	fmt.Printf("Feed Title: %s\n", feed.Channel.Title)
-	fmt.Printf("Feed Description: %s\n", feed.Channel.Description)
-	fmt.Printf("Feed Link: %s\n\n", feed.Channel.Link)
-	// Drukuj poszczegolne elementy feedu
-	for _, item := range feed.Channel.Items {
-		fmt.Printf("Title: %s\n", item.Title)
-		fmt.Printf("Link: %s\n", item.Link)
-		fmt.Printf("Published: %s\n", item.PubDate)
-		fmt.Printf("Description: %s\n\n", item.Description)
+	ticker := time.NewTicker(timeBetweenRequests)
+	for ; ; <-ticker.C {
+		fmt.Println("updating feeds...")
+		fmt.Println()
+		scrapeFeeds(s)
 	}
-	//fmt.Println(feed)
-	return nil
+
+	//url := "https://www.wagslane.dev/index.xml"
+	//feed, err := fetchFeed(context.Background(), url)
+	//if err != nil {
+	//	return err
+	//}
+	//// Wyswietle podstawowe informacje o feed
+	//fmt.Printf("Feed Title: %s\n", feed.Channel.Title)
+	//fmt.Printf("Feed Description: %s\n", feed.Channel.Description)
+	//fmt.Printf("Feed Link: %s\n\n", feed.Channel.Link)
+	//// Drukuj poszczegolne elementy feedu
+	//for _, item := range feed.Channel.Items {
+	//	fmt.Printf("Title: %s\n", item.Title)
+	//	fmt.Printf("Link: %s\n", item.Link)
+	//	fmt.Printf("Published: %s\n", item.PubDate)
+	//	fmt.Printf("Description: %s\n\n", item.Description)
+	//}
+	////fmt.Println(feed)
+	//return nil
 }
 
 func handlerAddFeed(s *state, cmd command, user database.User) error {
@@ -256,6 +269,16 @@ func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) 
 	}
 }
 
+// Function more to train then necessary. Not sure why it is said Agg funcion need to take parameter and not to set as constant
+func middlewareAgg(handler func(s *state, cmd command, time_between_reqs string) error) func(s *state, cmd command) error {
+	return func(s *state, cmd command) error {
+		// Set 1 minute as a string parameter
+		time_between_reqs := "1m0s"
+		// Call the actual handler, passing the user along
+		return handler(s, cmd, time_between_reqs)
+	}
+}
+
 func (c *commands) register(name string, f func(*state, command) error) {
 	//rejestruje fukcje pod nazwa "name" jako klucz i funcje f, ktora bedzie obslugiwala komende
 	c.komendy[name] = f
@@ -295,6 +318,69 @@ func fetchFeed(ctx context.Context, feedURL string) (*RSS, error) {
 	return &rss, nil
 }
 
+func scrapeFeeds(s *state) error {
+	feeds, err := s.db.GetNextFeedToFetch(context.Background())
+	if err != nil {
+		return err
+	}
+	for _, feed := range feeds {
+		url := feed.Url.String
+		rss, err := fetchFeed(context.Background(), url) //w tamtej funkcji dodac url albo jakos przekazac...
+		if err != nil {
+			fmt.Println("error: could not fetch feed:", url)
+			return err
+		}
+		err = s.db.MarkFeedFetched(context.Background(), feed.ID)
+		if err != nil {
+			fmt.Println("error: could not mark as fetched:", url)
+			return err
+		}
+		err = feedBasicPrint(*rss)
+		if err != nil {
+			fmt.Println("error: could not print feed:", url)
+			continue
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func feedDetailPrint(rss RSS) error {
+	// Wyswietle podstawowe informacje o feed
+	err := feedBasicPrint(rss)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Feed Title: %s\n", rss.Channel.Title)
+	fmt.Printf("Feed Description: %s\n", rss.Channel.Description)
+	fmt.Printf("Feed Link: %s\n\n", rss.Channel.Link)
+	// Drukuj poszczegolne elementy feedu
+	for _, item := range rss.Channel.Items {
+		fmt.Printf("Title: %s\n", item.Title)
+		fmt.Printf("Link: %s\n", item.Link)
+		fmt.Printf("Published: %s\n", item.PubDate)
+		fmt.Printf("Description: %s\n\n", item.Description)
+	}
+	return nil
+}
+
+func feedBasicPrint(rss RSS) error {
+	// Wyswietle podstawowe informacje o feed
+	fmt.Printf("Feed Title: %s\n", rss.Channel.Title)
+	fmt.Printf("Feed Description: %s\n", rss.Channel.Description)
+	fmt.Printf("Feed Link: %s\n\n", rss.Channel.Link)
+	// Drukuj poszczegolne elementy feedu
+	//for _, item := range rss.Channel.Items {
+	//	fmt.Printf("Title: %s\n", item.Title)
+	//	fmt.Printf("Link: %s\n", item.Link)
+	//	fmt.Printf("Published: %s\n", item.PubDate)
+	//	fmt.Printf("Description: %s\n\n", item.Description)
+	//}
+	return nil
+}
+
 func main() {
 	// odczytaj config
 	cfg, err := config.Read()
@@ -316,7 +402,7 @@ func main() {
 	c_commands.register("register", handlerRegister)
 	c_commands.register("reset", handlerReset)
 	c_commands.register("users", handlerUsers)
-	c_commands.register("agg", handlerAgg)
+	c_commands.register("agg", middlewareAgg(handlerAgg))
 	c_commands.register("addfeed", middlewareLoggedIn(handlerAddFeed))
 	c_commands.register("feeds", handlerFeeds)
 	c_commands.register("follow", middlewareLoggedIn(handlerFollow))

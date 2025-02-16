@@ -65,3 +65,14 @@ DELETE FROM feed_follows
 USING feeds
 WHERE feed_follows.feed_id = feeds.id AND feed_follows.user_id = $1 AND feeds.url = $2;
 
+-- name: MarkFeedFetched :exec
+UPDATE feeds
+SET last_fetched_at = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1;
+
+-- name: GetNextFeedToFetch :many
+SELECT * FROM feeds
+ORDER BY last_fetched_at DESC NULLS FIRST
+--LIMIT 1
+;
