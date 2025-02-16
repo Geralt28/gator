@@ -226,6 +226,23 @@ func handlerFollowing(s *state, cmd command, user database.User) error {
 	return nil
 }
 
+func handlerUnfollow(s *state, cmd command, user database.User) error {
+	if len(cmd.arguments) != 1 {
+		return fmt.Errorf("error: unfollow should have only one argument: url")
+	}
+	url := cmd.arguments[0]
+	Parametry := database.DeleteFeedFollowParams{
+		UserID: user.ID,
+		Url:    sql.NullString{String: url, Valid: true},
+	}
+	err := s.db.DeleteFeedFollow(context.Background(), Parametry)
+	if err != nil {
+		fmt.Println("You are not following feed:", url)
+		return err
+	}
+	return nil
+}
+
 func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(s *state, cmd command) error {
 	return func(s *state, cmd command) error {
 		// Get the currently logged-in user
@@ -304,6 +321,7 @@ func main() {
 	c_commands.register("feeds", handlerFeeds)
 	c_commands.register("follow", middlewareLoggedIn(handlerFollow))
 	c_commands.register("following", middlewareLoggedIn(handlerFollowing))
+	c_commands.register("unfollow", middlewareLoggedIn(handlerUnfollow))
 
 	args := os.Args
 
