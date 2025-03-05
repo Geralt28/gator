@@ -372,12 +372,14 @@ func scrapeFeeds(s *state) error {
 		rss, err := fetchFeed(context.Background(), url) //w tamtej funkcji dodac url albo jakos przekazac...
 		if err != nil {
 			fmt.Println("error: could not fetch feed:", url)
-			return err
+			continue
+			//return err
 		}
 		err = s.db.MarkFeedFetched(context.Background(), feed.ID)
 		if err != nil {
 			fmt.Println("error: could not mark as fetched:", url)
-			return err
+			continue
+			//return err
 		}
 		var czas_Valid bool
 		for _, item := range rss.Channel.Items {
@@ -389,10 +391,12 @@ func scrapeFeeds(s *state) error {
 			} else {
 				czas_Valid = true
 			}
+
 			PostParams := database.CreatePostParams{
-				Title:       item.Title,
+				Title:       html.UnescapeString(item.Title),
 				Url:         item.Link,
-				Description: item.Description,
+				Content:     html.UnescapeString(item.Description), // tu dodac sciaganie artykulu
+				Description: html.UnescapeString(item.Description),
 				PublishedAt: sql.NullTime{Time: czas, Valid: czas_Valid},
 				FeedID:      feed.ID,
 			}
